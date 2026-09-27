@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ScatterChart, Scatter, ZAxis,
 } from 'recharts';
-import { PageHeader, Card, EmptyState, LoadingState, ErrorState } from '@/components/ui';
+import { PageHeader, Card, LoadingState, ErrorState } from '@/components/ui';
 
 // ---- Types ----
 
@@ -190,17 +190,6 @@ export function DatasetExplorerPage() {
     const tripId = selectedFile.replace('.json', '');
     return predictions.rows.filter((r) => r.trip_id === tripId);
   }, [predictions, tripData, selectedFile]);
-
-  // Predicted label per window
-  const predictedLabels = useMemo(() => {
-    if (!predictions) return new Map<string, string>();
-    const map = new Map<string, string>();
-    for (const row of tripPredictions) {
-      const maxIdx = row.proba.indexOf(Math.max(...row.proba));
-      map.set(`${row.trip_id}_${row.t_start}`, predictions.classes[maxIdx]);
-    }
-    return map;
-  }, [predictions, tripPredictions]);
 
   // ---- Loading / Error states ----
 

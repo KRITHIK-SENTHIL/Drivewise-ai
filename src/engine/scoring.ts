@@ -182,9 +182,9 @@ export function computeDataQuality(samples: TelemetrySample[]): DataQualityResul
   checkFlat(samples.map((s) => s.speed), 'speed');
 
   // Score components
-  let gapScore = 100 - sampleGaps;
-  let noiseScore = clamp(100 - noiseLevel * 50, 0, 100);
-  let flatScore = 100 - missingFlatSignals.length * 25;
+  const gapScore = 100 - sampleGaps;
+  const noiseScore = clamp(100 - noiseLevel * 50, 0, 100);
+  const flatScore = 100 - missingFlatSignals.length * 25;
 
   if (sampleGaps > 10) reasons.push(`${sampleGaps}% of expected samples are missing — scoring may be less reliable.`);
   if (noiseLevel > 1.5) reasons.push(`Noise level is elevated (${noiseLevel} m/s² high-pass RMS) — some harsh events may be artefacts.`);

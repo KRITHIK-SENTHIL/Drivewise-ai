@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ReferenceDot, Legend,
+  Tooltip, ReferenceDot,
 } from 'recharts';
 import { useStore } from '@/store';
 import { extractFeatures, SAMPLE_RATE } from '@/engine/scoring';

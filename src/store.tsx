@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import type {
   SimulatorParams,
   TelemetrySample,
@@ -78,6 +78,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [activeProfileId, setActiveProfileId] = useState<string>('standard');
   const [loading, setLoading] = useState(false);
+  const [csvSamples, setCsvSamples] = useState<TelemetrySample[]>([]);
+  const [liveStatus, setLiveStatus] = useState<LiveStatus>('idle');
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveDurationSec, setLiveDurationSec] = useState<number>(60);
+  const [liveRemainingSec, setLiveRemainingSec] = useState<number>(60);
+  const [liveSamples, setLiveSamples] = useState<TelemetrySample[]>([]);
+  const liveRecorderRef = useRef<LiveRecorder | null>(null);
+  const liveTimerRef = useRef<number | null>(null);
 
   // Generate / store samples
   const samples: TelemetrySample[] = useMemo(() => {
@@ -88,9 +96,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [dataSource, simulatorParams]);
 
   // Upload CSV — stored in a ref-like state
-  const [csvSamples, setCsvSamples] = useState<TelemetrySample[]>([]);
-
-    const effectiveSamples = dataSource === 'csv' ? csvSamples : dataSource === 'live' ? liveSamples : samples;
+  const effectiveSamples =
+    dataSource === 'csv' ? csvSamples : dataSource === 'live' ? liveSamples : samples;
 
   const scoreResult = useMemo(() => {
     if (effectiveSamples.length === 0) return null;
@@ -99,6 +106,64 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const setSimulatorParam = useCallback((key: keyof SimulatorParams, value: number) => {
     setSimulatorParams((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const switchToLiveView = useCallback(() => {
+    setDataSource('live');
+    setLiveStatus('idle');
+    setLiveError(null);
+  }, []);
+
+  const stopLiveRecording = useCallback(() => {
+    if (liveTimerRef.current !== null) {
+      window.clearInterval(liveTimerRef.current);
+      liveTimerRef.current = null;
+    }
+    const recorder = liveRecorderRef.current;
+    liveRecorderRef.current = null;
+    if (!recorder) return;
+
+    setLiveStatus('processing');
+    const processed = processLiveSamples(recorder.stop());
+    if (processed.length === 0) {
+      setLiveError('No usable motion data was recorded. Make sure sensor permission was granted and the phone stayed on during recording.');
+      setLiveStatus('error');
+      return;
+    }
+    setLiveSamples(processed);
+    setDataSource('live');
+    setLiveStatus('done');
+  }, []);
+
+  const startLiveRecording = useCallback(async () => {
+    setLiveError(null);
+    setLiveStatus('requesting-permission');
+    const permission = await requestMotionPermission();
+    if (!permission.granted) {
+      setLiveError(permission.reason ?? 'Motion sensor permission was not granted.');
+      setLiveStatus('error');
+      return;
+    }
+
+    const recorder = new LiveRecorder();
+    liveRecorderRef.current = recorder;
+    recorder.start();
+    setLiveStatus('recording');
+    setLiveRemainingSec(liveDurationSec);
+    const startedAt = performance.now();
+    liveTimerRef.current = window.setInterval(() => {
+      const elapsed = (performance.now() - startedAt) / 1000;
+      const remaining = Math.max(0, liveDurationSec - elapsed);
+      setLiveRemainingSec(remaining);
+      if (remaining <= 0) stopLiveRecording();
+    }, 200);
+  }, [liveDurationSec, stopLiveRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (liveTimerRef.current !== null) window.clearInterval(liveTimerRef.current);
+      liveRecorderRef.current?.stop();
+    };
   }, []);
 
   const uploadCsv = useCallback((text: string, fileName: string): CsvParseResult => {
@@ -115,65 +180,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setDataSource('csv');
       setCsvFileName(fileName);
     }
-      const [liveStatus, setLiveStatus] = useState<LiveStatus>('idle');
-  const [liveError, setLiveError] = useState<string | null>(null);
-  const [liveDurationSec, setLiveDurationSec] = useState<number>(60);
-  const [liveRemainingSec, setLiveRemainingSec] = useState<number>(60);
-  const [liveSamples, setLiveSamples] = useState<TelemetrySample[]>([]);
-  const liveRecorderRef = useRef<LiveRecorder | null>(null);
-  const liveTimerRef = useRef<number | null>(null);
-
-  const switchToLiveView = useCallback(() => {
-    setDataSource('live');
-    setLiveStatus('idle');
-    setLiveError(null);
-  }, []);
-
-  const stopLiveRecording = useCallback(() => {
-    if (liveTimerRef.current !== null) {
-      window.clearInterval(liveTimerRef.current);
-      liveTimerRef.current = null;
-    }
-    const recorder = liveRecorderRef.current;
-    if (!recorder) return;
-    setLiveStatus('processing');
-    const raw = recorder.stop();
-    const processed = processLiveSamples(raw);
-    if (processed.length === 0) {
-      setLiveError('No usable motion data was recorded. Make sure sensor permission was granted and the phone stayed on during recording.');
-      setLiveStatus('error');
-      return;
-    }
-    setLiveSamples(processed);
-    setDataSource('live');
-    setLiveStatus('done');
-  }, []);
-
-  const startLiveRecording = useCallback(async () => {
-    setLiveError(null);
-    setLiveStatus('requesting-permission');
-    const perm = await requestMotionPermission();
-    if (!perm.granted) {
-      setLiveError(perm.reason ?? 'Motion sensor permission was not granted.');
-      setLiveStatus('error');
-      return;
-    }
-    const recorder = new LiveRecorder();
-    liveRecorderRef.current = recorder;
-    recorder.start();
-    setLiveStatus('recording');
-    setLiveRemainingSec(liveDurationSec);
-
-    const startedAt = performance.now();
-    liveTimerRef.current = window.setInterval(() => {
-      const elapsed = (performance.now() - startedAt) / 1000;
-      const remaining = Math.max(0, liveDurationSec - elapsed);
-      setLiveRemainingSec(remaining);
-      if (remaining <= 0) {
-        stopLiveRecording();
-      }
-    }, 200);
-  }, [liveDurationSec, stopLiveRecording]);
     setLoading(false);
     return result;
   }, []);
@@ -220,7 +226,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const applyProfile = useCallback((profileId: string) => {
     setActiveProfileId(profileId);
-    setSkills((prev) => {
+    setSkills(() => {
       // Reset to defaults then apply multiplier — we need to use DEFAULT_SKILLS as base
       return applyProfileMultipliers(profileId, DEFAULT_SKILLS);
     });

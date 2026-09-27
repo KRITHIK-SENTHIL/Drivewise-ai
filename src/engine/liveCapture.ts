@@ -21,7 +21,9 @@ export interface PermissionResult {
  * localhost) — it will not work in a sandboxed preview iframe.
  */
 export async function requestMotionPermission(): Promise<PermissionResult> {
-  const DME = (window as any).DeviceMotionEvent;
+  const DME = window.DeviceMotionEvent as
+    | (typeof DeviceMotionEvent & { requestPermission?: () => Promise<'granted' | 'denied'> })
+    | undefined;
   if (!DME) {
     return {
       granted: false,
